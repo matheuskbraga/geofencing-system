@@ -68,5 +68,5 @@ void loop() {
     Serial.println(data);
   }
 
-  delay(1000); // Enviar dados a cada 1 segundo
+  delay(2000); // Enviar dados a cada 1 segundo
 }
