@@ -1,6 +1,17 @@
 import socket
 import math
 
+
+
+# Configuração do socket e endereço do Tello
+tello_address = ('192.168.10.1', 8889)
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+# Função para enviar comandos para o Tello
+def send_command(command):
+    sock.sendto(command.encode(), tello_address)
+
+##############################################################
 HOST = '0.0.0.0'  # Aceitar conexões de qualquer IP local
 PORT = 3333
 
@@ -64,11 +75,51 @@ def main():
 
                     if distance <= GEOFENCE_RADIUS_METERS:
                         print("✅ Dentro da área permitida.\n")
+                        forward()
                     else:
                         print("🚫 Fora da área permitida!\n")
+                        land()
+
 
             except Exception as e:
                 print(f"Erro no parsing dos dados: {e}")
 
+
+# Função para conectar ao Tello
+def connect():
+    print("Conectando ao Tello...")
+    send_command('command')
+    time.sleep(2)
+    print("Conectado!")
+
+# Função para decolar
+def takeoff():
+    print("Decolando...")
+    send_command('takeoff')
+    time.sleep(5)
+    print("Drone no ar!")
+
+# Função para avançar 1 metro
+def forward():
+    print("Avançando 1 metro...")
+    send_command('forward 100')  # Avança 100 cm (1 metro)
+    time.sleep(5)  # Aguarda o movimento ser concluído
+    print("Drone avançou 1 metro!")
+
+# Função para pousar
+def land():
+    print("Pousando...")
+    send_command('land')
+    time.sleep(5)
+    print("Drone pousado!")
+
+# Função para executar uma sequência simples
+def executar_drone():
+    connect()
+    takeoff()
+    #time.sleep(5)  # Voa por 5 segundos
+    #land()
+
 if __name__ == "__main__":
     main()
+    executar_drone()
