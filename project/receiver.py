@@ -1,3 +1,4 @@
+
 import socket
 
 # Defina o IP e a porta do servidor (deve ser o mesmo configurado no ESP8266)

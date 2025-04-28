@@ -43,6 +43,7 @@ void setup() {
 
 void loop() {
   // Verificar dados do GPS
+  delay(20000);
   while (gpsSerial.available() > 0) {
     gps.encode(gpsSerial.read());
   }
