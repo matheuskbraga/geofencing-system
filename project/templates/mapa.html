@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Geofencing Interativo</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
+    <style>
+        #map { height: 90vh; }
+        body { font-family: sans-serif; text-align: center; }
+    </style>
+</head>
+<body>
+    <h2>🗺️ Desenhe o polígono e verifique o ponto!</h2>
+    <div id="map"></div>
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+    <script>
+        const map = L.map('map').setView([-23.5505, -46.6333], 17);
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: 'Map data © OpenStreetMap contributors'
+        }).addTo(map);
+
+        const drawnItems = new L.FeatureGroup();
+        map.addLayer(drawnItems);
+
+        const drawControl = new L.Control.Draw({
+            draw: {
+                marker: false,
+                polyline: false,
+                rectangle: false,
+                circle: false,
+                circlemarker: false,
+                polygon: true
+            },
+            edit: {
+                featureGroup: drawnItems
+            }
+        });
+        map.addControl(drawControl);
+
+        map.on(L.Draw.Event.CREATED, function (e) {
+            drawnItems.clearLayers();
+            const layer = e.layer;
+            drawnItems.addLayer(layer);
+        });
+
+        // Teste com ponto fixo
+        const pontoTeste = L.marker([-23.5511, -46.6331]).addTo(map).bindPopup("Ponto de Teste").openPopup();
+
+        function verificar() {
+            const polygon = drawnItems.getLayers()[0];
+            if (!polygon) {
+                alert("Desenhe um polígono primeiro!");
+                return;
+            }
+
+            const pontos = polygon.getLatLngs()[0].map(p => ({lat: p.lat, lng: p.lng}));
+            const ponto = {lat: -23.5511, lng: -46.6331}; // ponto fixo (pode trocar depois)
+
+            fetch('/verificar', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ poligono: pontos, ponto: ponto })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.dentro) {
+                    alert("✅ O ponto está DENTRO da área!");
+                } else {
+                    alert("❌ O ponto está FORA da área!");
+                }
+            });
+        }
+
+        const btn = document.createElement("button");
+        btn.innerText = "Verificar ponto";
+        btn.onclick = verificar;
+        document.body.appendChild(btn);
+    </script>
+</body>
+</html>
