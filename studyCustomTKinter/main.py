@@ -1,5 +1,6 @@
 from customtkinter import *
 
+# Inicializa a interface
 app = CTk()
 app.geometry("1280x720")
 
