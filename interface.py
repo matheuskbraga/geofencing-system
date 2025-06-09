@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import customtkinter as ctk
 import tkinter.font as tkFont
+from drone_commands import TelloConfig, TelloController
 
 
 @dataclass(unsafe_hash=True)
