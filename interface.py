@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 import customtkinter as ctk
 import tkinter.font as tkFont
-from drone_commands import TelloConfig, TelloController
+from drone_commands import *
 
 
 @dataclass(unsafe_hash=True)
@@ -12,6 +12,9 @@ class App(ctk.CTk):
     def __post_init__(self):
         # Chama explicitamente o construtor da classe base
         ctk.CTk.__init__(self)
+
+        # Crie uma instância compartilhada do controlador
+        controller = TelloController()
 
         # Define o modo de aparência e o tema padrão
         ctk.set_appearance_mode("system")  # "light", "dark" ou "system"
@@ -27,9 +30,9 @@ class App(ctk.CTk):
 
         # Cria e organiza os 4 widgets no grid
         widget1 = Widget_Configuracao(self, width=322, height=296)
-        widget2 = Widget_Status(self, width=322, height=296)
+        widget2 = Widget_Status(self, controller, width=322, height=296)
         widget3 = Widget_Monitoramento(self, width=767, height=480)
-        widget4 = Widget_ControleDrone(self, width=767, height=178)
+        widget4 = Widget_ControleDrone(self, controller, width=767, height=178)
 
         widget1.place(x=51,  y=36)
         widget2.place(x=51,  y=389)
@@ -70,12 +73,15 @@ class Widget_Configuracao(ctk.CTkFrame):
 
 
 
-class Widget_Status(ctk.CTkFrame):
-    def __init__(self, master, **kwargs):
+class Widget_Status(ctk.CTkFrame, TelloController):
+    def __init__(self, master, controller, **kwargs):
         super().__init__(master, **kwargs)
+        self.controller = controller
         self.setup_status()
+        
 
     def setup_status(self):
+
         label = ctk.CTkLabel(self, text="Status do Drone", font=("Arial", 20))
         label.place(x=100, y=5)
 
@@ -94,8 +100,9 @@ class Widget_Status(ctk.CTkFrame):
         label5 = ctk.CTkLabel(self, text="Bateria: 50%", font=("Arial", 12))
         label5.place(x=20, y=205)
         
-        button1 = ctk.CTkButton(self, text="CONECTAR", font=("Arial", 12))
+        button1 = ctk.CTkButton(self, text="CONECTAR", font=("Arial", 12), command=self.connect)
         button1.place(x=100, y=250)
+        
 
 
 
@@ -105,9 +112,10 @@ class Widget_Monitoramento(ctk.CTkFrame):
 
 
 
-class Widget_ControleDrone(ctk.CTkFrame):
-    def __init__(self, master, **kwargs):
-        super().__init__(master, **kwargs)
+class Widget_ControleDrone(ctk.CTkFrame, TelloController):
+    def __init__(self, master, controller, **kwargs):
+        super().__init__(master, **kwargs) # inicializa o CTKframe
+        self.controller = controller     # inicializa o TelloController
         self.setup_controle()
 
     
@@ -116,33 +124,33 @@ class Widget_ControleDrone(ctk.CTkFrame):
         label.place(x=20, y=5)
 
         # DECOLAR
-        button1 = ctk.CTkButton(self, text="DECOLAR", font=("Arial", 12))
+        button1 = ctk.CTkButton(self, text="DECOLAR", font=("Arial", 12), command=self.controller.takeoff)
         button1.place(x=20, y=50)
 
         # POUSAR
-        button2 = ctk.CTkButton(self, text="POUSAR", font=("Arial", 12))
+        button2 = ctk.CTkButton(self, text="POUSAR", font=("Arial", 12), command=self.controller.land)
         button2.place(x=20, y=100)
 
         # FRENTE
-        button3 = ctk.CTkButton(self, text="FRENTE", font=("Arial", 12))
+        button3 = ctk.CTkButton(self, text="FRENTE", font=("Arial", 12), command=lambda: self.controller.move_forward(60))
         button3.place(x=400, y=30)
         
         # TRÁS
-        button4 = ctk.CTkButton(self, text="TRÁS", font=("Arial", 12))
+        button4 = ctk.CTkButton(self, text="TRÁS", font=("Arial", 12), command=lambda: self.controller.move_forward(60))
         button4.place(x=400, y=90)
 
         # DIREITA
-        button5 = ctk.CTkButton(self, text="DIREITA", font=("Arial", 12))
+        button5 = ctk.CTkButton(self, text="DIREITA", font=("Arial", 12), command=lambda: self.controller.move_right(60))
         button5.place(x=500, y=60)
 
         # ESQUERDA
-        button6 = ctk.CTkButton(self, text="ESQUERDA", font=("Arial", 12))
+        button6 = ctk.CTkButton(self, text="ESQUERDA", font=("Arial", 12), command=lambda: self.controller.move_left(60))
         button6.place(x=300, y=60)
 
         # SUBIR
-        button7 = ctk.CTkButton(self, text="SUBIR", font=("Arial", 12))
+        button7 = ctk.CTkButton(self, text="SUBIR", font=("Arial", 12), command=lambda: self.controller.move_up(60))
         button7.place(x=320, y=140)
 
         # DESCER
-        button8 = ctk.CTkButton(self, text="DESCER", font=("Arial", 12))
+        button8 = ctk.CTkButton(self, text="DESCER", font=("Arial", 12), command=lambda: self.controller.move_up(60))
         button8.place(x=480, y=140)

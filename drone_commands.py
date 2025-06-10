@@ -10,10 +10,10 @@ class TelloConfig:
 
 
 class TelloController:
-    def __init__(self, config: TelloConfig = TelloConfig()):
+    def __init__(self, config: TelloConfig = None):
+        if config is None:
+            config = TelloConfig()
         self.config = config
-        # Se o djitellopy permitir, você pode usar os parâmetros da config.
-        # Caso contrário, você mantém a implementação padrão.
         self.tello = Tello()
 
     def connect(self):
@@ -29,11 +29,11 @@ class TelloController:
         return self.tello.land()
     
     def move_up(self, distance: int):
-        # move para frente
+        # subir
         return self.tello.move_up(distance)
     
     def move_down(self, distance: int):
-        # move para frente
+        # descer
         return self.tello.move_down(distance)
     
     def move_forward(self, distance: int):
