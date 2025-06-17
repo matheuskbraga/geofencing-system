@@ -1,13 +1,20 @@
 from dataclasses import dataclass
 from djitellopy import Tello
 
+def requires_connection(func):
+    """
+    Decorator que garante que o drone esteja conectado antes de executar o comando.
+    """
+    def wrapper(self, *args, **kwargs):
+        if not self.is_connected():
+            raise Exception("Drone não está conectado! Por favor, execute connect() primeiro.")
+        return func(self, *args, **kwargs)
+    return wrapper
 
 @dataclass
 class TelloConfig:
     host: str = "192.168.10.1"
     command_port: int = 8889
-    # Aqui você pode incluir outros parâmetros de configuração se necessário
-
 
 class TelloController:
     def __init__(self, config: TelloConfig = None):
@@ -15,61 +22,56 @@ class TelloController:
             config = TelloConfig()
         self.config = config
         self.tello = Tello()
-        self.conexao = False
+        self._connected = False
 
     def connect(self):
         """
-        Estabelece a conexão com o drone.
-        Se a conexão for bem-sucedida, atualiza o flag 'conexao' para True.
+        Tenta conectar com o drone e atualiza o estado de conexão.
         """
-        resposta = self.tello.connect()
-        if resposta:
-            self.conexao = True
-        return resposta
+        response = self.tello.connect()
+        self._connected = bool(response)
+        return response
 
     def is_connected(self):
         """
-        Verifica se o drone está conectado.
-        
-        Retorna:
-            bool: True se conectado; False caso contrário.
+        Retorna True se o drone estiver conectado; False caso contrário.
         """
-        return self.conexao
-    
+        return self._connected
 
+    @requires_connection
     def takeoff(self):
-        # decolar
         return self.tello.takeoff()
 
+    @requires_connection
     def land(self):
-        # pousar
         return self.tello.land()
-    
+
+    @requires_connection
     def move_up(self, distance: int):
-        # subir
         return self.tello.move_up(distance)
-    
+
+    @requires_connection
     def move_down(self, distance: int):
-        # descer
         return self.tello.move_down(distance)
-    
+
+    @requires_connection
     def move_forward(self, distance: int):
-        # move para frente
         return self.tello.move_forward(distance)
 
+    @requires_connection
     def move_left(self, distance: int):
-        # movimento para a esquerda
         return self.tello.move_left(distance)
 
+    @requires_connection
     def move_right(self, distance: int):
-        # movimento para a direita
         return self.tello.move_right(distance)
-    
+
+    @requires_connection
     def move_back(self, distance: int):
-        # move para trás
         return self.tello.move_back(distance)
 
+    @requires_connection
     def end(self):
-        # fecha conexão com o drone
-        self.conexao = False
-        return self.tello.end()
+        response = self.tello.end()
+        self._connected = False
+        return response

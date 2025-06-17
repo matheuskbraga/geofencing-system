@@ -153,9 +153,7 @@ def widget_controle_drone(master, controller, **kwargs):
     button7.place(x=320, y=140)
 
     # DESCER
-    # Note que o comando utilizado foi controller.move_up;
-    # se o desejado for descer, substitua por controller.move_down
-    button8 = ctk.CTkButton(frame, text="DESCER", font=("Arial", 12), state=state, command=lambda: controller.move_up(60))
+    button8 = ctk.CTkButton(frame, text="DESCER", font=("Arial", 12), state=state, command=lambda: controller.move_down(60))
     button8.place(x=480, y=140)
 
     return frame
