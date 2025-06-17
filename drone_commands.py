@@ -15,10 +15,27 @@ class TelloController:
             config = TelloConfig()
         self.config = config
         self.tello = Tello()
+        self.conexao = False
 
     def connect(self):
-        # conectar
-        return self.tello.connect()
+        """
+        Estabelece a conexão com o drone.
+        Se a conexão for bem-sucedida, atualiza o flag 'conexao' para True.
+        """
+        resposta = self.tello.connect()
+        if resposta:
+            self.conexao = True
+        return resposta
+
+    def is_connected(self):
+        """
+        Verifica se o drone está conectado.
+        
+        Retorna:
+            bool: True se conectado; False caso contrário.
+        """
+        return self.conexao
+    
 
     def takeoff(self):
         # decolar
@@ -54,4 +71,5 @@ class TelloController:
 
     def end(self):
         # fecha conexão com o drone
+        self.conexao = False
         return self.tello.end()
