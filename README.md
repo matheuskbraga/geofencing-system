@@ -40,7 +40,7 @@ Observação: Este projeto foi desenvolvido especificamente para o drone Tello, 
 
 1. Clone este repositório:
    ```bash
-   git clone https://github.com/matheus/geofencing-system.git
+   git clone https://github.com/matheuskbraga/geofencing-system
    
 2. Altere o endereço do dispositivo no código transmitter.ino para o IP de quem irá rodar o software.
 
