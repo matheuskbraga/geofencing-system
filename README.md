@@ -56,4 +56,4 @@ Observação: Este projeto foi desenvolvido especificamente para o drone Tello, 
 
 8. Conecte o dispositivo na mesma rede do drone.
 
-O sistema já estará funcionando e começará a monitorar automaticamente.
+9. O sistema já estará funcionando e começará a monitorar automaticamente.
