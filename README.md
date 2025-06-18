@@ -34,8 +34,26 @@ link:
 
 
 ---
-## 🛠️ Como Executar
+## Como Executar
+
+Observação: Este projeto foi desenvolvido especificamente para o drone Tello, da DJI, incluindo sua execução e controle via software. Caso outro modelo de drone seja utilizado, será necessário ajustar o código, especialmente nos trechos relacionados aos comandos de voo e/ou à linguagem de comunicação compatível com o novo dispositivo.
 
 1. Clone este repositório:
    ```bash
    git clone https://github.com/matheus/geofencing-system.git
+   
+2. Altere o endereço do dispositivo no código transmitter.ino para o IP de quem irá rodar o software.
+
+3. Ative o hotspot no dispositivo que rodará o software.
+
+4. Conecte o ESP8266 à rede criada pelo hotspot.
+
+5. Dê um git clone no repositório do projeto.
+
+6. Instale as dependências com pip install -r requirements.txt.
+
+7. Execute o arquivo main.py com python main.py.
+
+8. Conecte o dispositivo na mesma rede do drone.
+
+O sistema já estará funcionando e começará a monitorar automaticamente.
