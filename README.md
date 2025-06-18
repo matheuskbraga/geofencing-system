@@ -1,4 +1,4 @@
-# 📡 Geofencing System com Drones
+# Geofencing System com Drones
 
 Este projeto é um software de geofencing desenvolvido para delimitar áreas tridimensionais com base em dados de localização geográfica de drones. A aplicação recebe dados de latitude, longitude e altitude via GPS e constrói, em tempo real, um "espaço aéreo virtual" para monitoramento e controle de áreas específicas.
 
