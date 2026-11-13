@@ -1,6 +1,35 @@
+# --- Python ---
 __pycache__/
-*.pyc
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# --- Ambientes virtuais ---
 .venv/
 venv/
+env/
+
+# --- Testes e ferramentas ---
 .pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# --- Logs ---
 *.log
+
+# --- Segredos locais (nunca versionar senhas de Wi-Fi) ---
+.env
+secrets.h
+
+# --- Editores e sistema operacional ---
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Arquivos temporários de documentação ---
+docs/_*

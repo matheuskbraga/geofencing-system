@@ -44,16 +44,21 @@ class Geofence:
 
     def violation(self, pos: Position) -> Optional[str]:
         """Retorna o motivo da violação, ou None se a posição é permitida."""
+        return self.check(pos.horizontal_distance_cm, pos.z)
+
+    def check(self, horizontal_cm: float, height_cm: float) -> Optional[str]:
+        """Mesma regra de `violation`, a partir de distância e altura já calculadas
+        (usado pelo GPS, onde a distância vem de coordenadas, não de x/y)."""
         if not self.enabled:
             return None
-        if pos.horizontal_distance_cm > self.radius_cm:
-            return (f"fora do raio: {pos.horizontal_distance_cm / 100:.2f} m "
+        if horizontal_cm > self.radius_cm:
+            return (f"fora do raio: {horizontal_cm / 100:.2f} m "
                     f"> {self.radius_cm / 100:.2f} m")
-        if pos.z > self.max_height_cm:
-            return (f"acima da altura máxima: {pos.z / 100:.2f} m "
+        if height_cm > self.max_height_cm:
+            return (f"acima da altura máxima: {height_cm / 100:.2f} m "
                     f"> {self.max_height_cm / 100:.2f} m")
-        if pos.z < 0:
-            return f"abaixo do solo: {pos.z / 100:.2f} m"
+        if height_cm < 0:
+            return f"abaixo do solo: {height_cm / 100:.2f} m"
         return None
 
     def contains(self, pos: Position) -> bool:

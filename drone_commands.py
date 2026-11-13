@@ -78,6 +78,7 @@ class TelloController:
         self.violations = ViolationLog()
         self.position = Position()
         self.flying = False
+        self.last_height_cm: Optional[float] = None
 
     # -- conexão ---------------------------------------------------------------
     def connect(self) -> None:
@@ -110,12 +111,14 @@ class TelloController:
         self.tello.takeoff()
         self.flying = True
         self.position = Position(0, 0, TAKEOFF_HEIGHT_CM)
+        self.last_height_cm = TAKEOFF_HEIGHT_CM
 
     @requires_connection
     def land(self) -> None:
         self.tello.land()
         self.flying = False
         self.position = Position(self.position.x, self.position.y, 0)
+        self.last_height_cm = 0
 
     @requires_connection
     def emergency(self) -> None:
@@ -123,6 +126,7 @@ class TelloController:
         self.tello.emergency()
         self.flying = False
         self.position = Position(self.position.x, self.position.y, 0)
+        self.last_height_cm = 0
 
     @requires_connection
     def move(self, direction: str, distance_cm: int) -> None:
@@ -151,7 +155,9 @@ class TelloController:
     # -- telemetria --------------------------------------------------------------
     @requires_connection
     def telemetry(self) -> dict:
-        return {
+        data = {
             "battery": self.tello.get_battery(),
             "height_cm": self.tello.get_height(),
         }
+        self.last_height_cm = data["height_cm"]  # lido pelo monitor de GPS
+        return data
