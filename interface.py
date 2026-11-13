@@ -1,160 +1,315 @@
-from dataclasses import dataclass
+"""Interface gráfica (CustomTkinter).
+
+Estrutura:
+    App                -> janela principal; orquestra tudo
+    ConfigFrame        -> modo de operação, distância por movimento, geofence
+    StatusFrame        -> conexão, posição, bateria, botão CONECTAR
+    MonitorFrame       -> histórico de violações do perímetro
+    ControlFrame       -> botões de voo
+
+Regra de ouro do Tkinter: só a thread principal mexe nos widgets. Comandos ao
+drone são lentos (bloqueiam até o Tello responder), então rodam numa thread
+de trabalho e devolvem o resultado por uma fila, lida pela thread principal
+via `after()`.
+"""
+from __future__ import annotations
+
+import queue
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from typing import Callable, Optional
+
 import customtkinter as ctk
-import tkinter.font as tkFont
-from drone_commands import TelloController
 
-@dataclass(unsafe_hash=True)
+import config
+from drone_commands import (DroneError, GeofenceViolationError, TelloController)
+from geofence import Geofence
+
+FONT = ("Arial", 12)
+FONT_TITLE = ("Arial", 20)
+
+
+class ConfigFrame(ctk.CTkFrame):
+    def __init__(self, master, app: "App"):
+        super().__init__(master)
+        self.app = app
+        self.columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(self, text="Configurações", font=FONT_TITLE).grid(
+            row=0, column=0, pady=(8, 4))
+
+        ctk.CTkLabel(self, text="Modo de operação:", font=FONT).grid(
+            row=1, column=0, sticky="w", padx=20)
+        self.mode = ctk.CTkComboBox(
+            self, values=[config.MODE_FREE, config.MODE_FENCED],
+            command=lambda _: self.apply())
+        self.mode.grid(row=2, column=0, padx=20, pady=(0, 8), sticky="ew")
+
+        self.step_label = ctk.CTkLabel(self, font=FONT)
+        self.step_label.grid(row=3, column=0, sticky="w", padx=20)
+        self.step = ctk.CTkSlider(
+            self, from_=config.MIN_MOVE_CM, to=config.MAX_MOVE_CM,
+            number_of_steps=(config.MAX_MOVE_CM - config.MIN_MOVE_CM) // 10,
+            command=self._on_step)
+        self.step.set(config.DEFAULT_MOVE_CM)
+        self.step.grid(row=4, column=0, padx=20, pady=(0, 8), sticky="ew")
+        self._on_step(config.DEFAULT_MOVE_CM)
+
+        ctk.CTkLabel(self, text="Raio de delimitação (m):", font=FONT).grid(
+            row=5, column=0, sticky="w", padx=20)
+        self.radius = ctk.CTkEntry(self)
+        self.radius.insert(0, str(config.DEFAULT_RADIUS_M))
+        self.radius.grid(row=6, column=0, padx=20, pady=(0, 8), sticky="ew")
+
+        ctk.CTkLabel(self, text="Altura máxima (m):", font=FONT).grid(
+            row=7, column=0, sticky="w", padx=20)
+        self.height = ctk.CTkEntry(self)
+        self.height.insert(0, str(config.DEFAULT_MAX_HEIGHT_M))
+        self.height.grid(row=8, column=0, padx=20, pady=(0, 8), sticky="ew")
+
+        ctk.CTkButton(self, text="APLICAR", font=FONT, command=self.apply).grid(
+            row=9, column=0, pady=(4, 12))
+
+    @property
+    def step_cm(self) -> int:
+        # arredonda para múltiplos de 10 (o slider devolve float)
+        return int(round(self.step.get() / 10) * 10)
+
+    def _on_step(self, value) -> None:
+        self.step_label.configure(text=f"Distância por movimento: {int(round(float(value) / 10) * 10)} cm")
+
+    def apply(self) -> None:
+        """Lê os campos, valida e instala (ou remove) o geofence no controlador."""
+        if self.mode.get() == config.MODE_FREE:
+            self.app.controller.geofence = None
+            self.app.notify("Voo livre: delimitação desativada.")
+        else:
+            try:
+                radius_m = float(self.radius.get().replace(",", "."))
+                height_m = float(self.height.get().replace(",", "."))
+                if radius_m <= 0 or height_m <= 0:
+                    raise ValueError
+            except ValueError:
+                self.app.notify("Raio e altura devem ser números maiores que zero.", error=True)
+                return
+            self.app.controller.geofence = Geofence(radius_m * 100, height_m * 100)
+            self.app.notify(f"Delimitação ativa: raio {radius_m:g} m, altura {height_m:g} m.")
+        self.app.refresh()
+
+
+class StatusFrame(ctk.CTkFrame):
+    def __init__(self, master, app: "App"):
+        super().__init__(master)
+        self.app = app
+        self.columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(self, text="Status do Drone", font=FONT_TITLE).grid(
+            row=0, column=0, pady=(8, 4))
+        self.conn = ctk.CTkLabel(self, font=FONT)
+        self.mode = ctk.CTkLabel(self, font=FONT)
+        self.pos = ctk.CTkLabel(self, font=FONT)
+        self.dist = ctk.CTkLabel(self, font=FONT)
+        self.battery = ctk.CTkLabel(self, font=FONT)
+        self.msg = ctk.CTkLabel(self, font=FONT, wraplength=280, justify="left")
+        for i, w in enumerate((self.conn, self.mode, self.pos, self.dist, self.battery), start=1):
+            w.grid(row=i, column=0, sticky="w", padx=20, pady=2)
+        self.msg.grid(row=6, column=0, sticky="w", padx=20, pady=(6, 2))
+
+        self.button = ctk.CTkButton(self, text="CONECTAR", font=FONT, command=app.connect)
+        self.button.grid(row=7, column=0, pady=(8, 12))
+        self.battery_value: Optional[int] = None
+
+    def refresh(self) -> None:
+        c = self.app.controller
+        if c.is_connected():
+            self.conn.configure(text="Conectado", text_color="green")
+        else:
+            self.conn.configure(text="Desconectado", text_color="red")
+        fenced = c.geofence is not None and c.geofence.enabled
+        self.mode.configure(
+            text=f"Modo: {'Delimitação' if fenced else 'Voo livre'}",
+            text_color="green" if fenced else "gray")
+        p = c.position
+        self.pos.configure(text=f"Pos (x, y, z): {p.x:.0f}, {p.y:.0f}, {p.z:.0f} cm")
+        if fenced:
+            self.dist.configure(
+                text=f"Distância da origem: {p.horizontal_distance_cm / 100:.2f} m "
+                     f"/ {c.geofence.radius_cm / 100:.2f} m")
+        else:
+            self.dist.configure(text="Distância da origem: N/A")
+        self.battery.configure(
+            text="Bateria: --" if self.battery_value is None else f"Bateria: {self.battery_value}%")
+        self.button.configure(state="disabled" if self.app.busy or c.is_connected() else "normal")
+
+    def set_message(self, text: str, error: bool = False) -> None:
+        self.msg.configure(text=text, text_color="red" if error else ("gray20", "gray80"))
+
+
+class MonitorFrame(ctk.CTkFrame):
+    """Mostra o histórico de violações do perímetro."""
+
+    def __init__(self, master, app: "App"):
+        super().__init__(master)
+        self.app = app
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(1, weight=1)
+        ctk.CTkLabel(self, text="Monitoramento de violações", font=FONT_TITLE).grid(
+            row=0, column=0, pady=(8, 4))
+        self.box = ctk.CTkTextbox(self, state="disabled")
+        self.box.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 12))
+        self._shown = 0
+
+    def refresh(self) -> None:
+        events = self.app.controller.violations.events
+        if len(events) == self._shown:
+            return
+        self.box.configure(state="normal")
+        for event in events[self._shown:]:
+            self.box.insert("end", str(event) + "\n")
+        self.box.see("end")
+        self.box.configure(state="disabled")
+        self._shown = len(events)
+
+
+class ControlFrame(ctk.CTkFrame):
+    def __init__(self, master, app: "App"):
+        super().__init__(master)
+        self.app = app
+        ctk.CTkLabel(self, text="Controles do Drone", font=FONT_TITLE).grid(
+            row=0, column=0, columnspan=5, sticky="w", padx=20, pady=(8, 4))
+
+        self.movers: list[ctk.CTkButton] = []     # só funcionam quando livres
+        self.safety: list[ctk.CTkButton] = []     # sempre disponíveis se conectado
+
+        def add(text, row, col, command, group, color=None):
+            kw = {"fg_color": color, "hover_color": color} if color else {}
+            b = ctk.CTkButton(self, text=text, font=FONT, state="disabled", command=command, **kw)
+            b.grid(row=row, column=col, padx=8, pady=6)
+            group.append(b)
+
+        add("DECOLAR", 1, 0, lambda: app.run_command(app.controller.takeoff), self.movers)
+        add("POUSAR", 2, 0, lambda: app.run_command(app.controller.land), self.safety)
+        add("EMERGÊNCIA", 3, 0, app.emergency, self.safety, color="#b00020")
+        add("FRENTE", 1, 2, lambda: app.move("forward"), self.movers)
+        add("ESQUERDA", 2, 1, lambda: app.move("left"), self.movers)
+        add("TRÁS", 2, 2, lambda: app.move("back"), self.movers)
+        add("DIREITA", 2, 3, lambda: app.move("right"), self.movers)
+        add("SUBIR", 3, 1, lambda: app.move("up"), self.movers)
+        add("DESCER", 3, 3, lambda: app.move("down"), self.movers)
+
+    def refresh(self) -> None:
+        connected = self.app.controller.is_connected()
+        free = connected and not self.app.busy
+        for b in self.movers:
+            b.configure(state="normal" if free else "disabled")
+        for b in self.safety:
+            b.configure(state="normal" if connected else "disabled")
+
+
 class App(ctk.CTk):
-    title_str: str = "Software de Delimitação"
-    geometry_str: str = "1280x720"
-
-    def __post_init__(self):
-        # Chama explicitamente o construtor da classe base
-        ctk.CTk.__init__(self)
-
-        # Cria uma instância compartilhada do controlador
-        controller = TelloController()
-
-        # Define o modo de aparência e o tema padrão
-        ctk.set_appearance_mode("light")  # "light", "dark" ou "system"
+    def __init__(self, controller: Optional[TelloController] = None):
+        super().__init__()
+        ctk.set_appearance_mode("light")
         ctk.set_default_color_theme("blue")
-        
-        # Configura título e dimensão da janela
-        self.title(self.title_str)
-        self.geometry(self.geometry_str)
+        self.title(config.WINDOW_TITLE)
+        self.geometry(config.WINDOW_SIZE)
+        self.minsize(900, 600)
 
-        # Configuração do layout: 2 linhas x 2 colunas com peso para redimensionamento
-        self.grid_columnconfigure((0, 1), weight=1, uniform="column")
-        self.grid_rowconfigure((0, 1), weight=1, uniform="row")
+        self.controller = controller or TelloController()
+        self.busy = 0                                   # nº de comandos em andamento
+        self._executor = ThreadPoolExecutor(max_workers=1)  # serializa comandos
+        self._results: queue.Queue = queue.Queue()      # threads -> UI
 
-        # Cria e organiza os 4 widgets no grid usando as funções criadoras
-        widget1 = widget_configuracao(self, width=322, height=296)
-        widget2 = widget_status(self, controller, width=322, height=296)
-        widget3 = widget_monitoramento(self, width=767, height=480)
-        widget4 = widget_controle_drone(self, controller, width=767, height=178)
+        self.columnconfigure(0, weight=1, uniform="c")
+        self.columnconfigure(1, weight=2, uniform="c")
+        self.rowconfigure(0, weight=3)
+        self.rowconfigure(1, weight=2)
 
-        widget1.place(x=51,  y=36)
-        widget2.place(x=51,  y=389)
-        widget3.place(x=434,  y=36)
-        widget4.place(x=434,  y=521)
+        self.config_frame = ConfigFrame(self, self)
+        self.status_frame = StatusFrame(self, self)
+        self.monitor_frame = MonitorFrame(self, self)
+        self.control_frame = ControlFrame(self, self)
+        self.config_frame.grid(row=0, column=0, sticky="nsew", padx=(16, 8), pady=(16, 8))
+        self.status_frame.grid(row=1, column=0, sticky="nsew", padx=(16, 8), pady=(8, 16))
+        self.monitor_frame.grid(row=0, column=1, sticky="nsew", padx=(8, 16), pady=(16, 8))
+        self.control_frame.grid(row=1, column=1, sticky="nsew", padx=(8, 16), pady=(8, 16))
 
+        self.protocol("WM_DELETE_WINDOW", self.on_close)
+        self.refresh()
+        self.after(config.UI_POLL_INTERVAL_MS, self._poll_results)
+        self.after(config.TELEMETRY_INTERVAL_MS, self._poll_telemetry)
 
-def widget_configuracao(master, **kwargs):
-    """
-    Cria um frame de Configurações com os controles de operação e delimitação.
-    """
-    frame = ctk.CTkFrame(master, **kwargs)
-    
-    label = ctk.CTkLabel(frame, text="Configurações", font=("Arial", 20))
-    label.place(x=100, y=5)
+    # -- API usada pelos frames -------------------------------------------------
+    def notify(self, text: str, error: bool = False) -> None:
+        self.status_frame.set_message(text, error)
 
-    label2 = ctk.CTkLabel(frame, text="Modo de operação:", font=("Arial", 12))
-    label2.place(x=20, y=45)
+    def refresh(self) -> None:
+        for frame in (self.status_frame, self.monitor_frame, self.control_frame):
+            frame.refresh()
 
-    chckbox = ctk.CTkComboBox(frame, values=["Voo livre", "Modo delimitação"])
-    chckbox.place(x=90, y=75)
+    def connect(self) -> None:
+        self.notify("Conectando...")
+        self.run_command(self.controller.connect, on_ok=lambda _: self.notify("Drone conectado."))
 
-    label3 = ctk.CTkLabel(frame, text="Modo de operação:", font=("Arial", 12))
-    label3.place(x=20, y=125)
+    def move(self, direction: str) -> None:
+        self.run_command(lambda: self.controller.move(direction, self.config_frame.step_cm))
 
-    slider = ctk.CTkSlider(frame, from_=0, to=100)
-    slider.place(x=60, y=150)
+    def emergency(self) -> None:
+        # Fora da fila: precisa agir mesmo que outro comando esteja travado.
+        self.run_command(self.controller.emergency, urgent=True)
 
-    label4 = ctk.CTkLabel(frame, text="metros", font=("Arial", 12))
-    label4.place(x=140, y=167)
+    # -- execução assíncrona ------------------------------------------------------
+    def run_command(self, fn: Callable, on_ok: Optional[Callable] = None,
+                    on_err: Optional[Callable] = None, urgent: bool = False) -> None:
+        """Executa `fn` fora da thread da UI; callbacks voltam na thread da UI."""
+        self.busy += 1
+        self.refresh()
 
-    label5 = ctk.CTkLabel(frame, text="Raio de delimitação:", font=("Arial", 12))
-    label5.place(x=20, y=200)
+        def job():
+            try:
+                self._results.put((on_ok, on_err, fn(), None))
+            except Exception as exc:  # devolvemos qualquer erro para a UI tratar
+                self._results.put((on_ok, on_err, None, exc))
 
-    input_text = ctk.CTkEntry(frame, placeholder_text="Digite a área (metros)", width=250)
-    input_text.place(x=20, y=230)
+        if urgent:
+            threading.Thread(target=job, daemon=True).start()
+        else:
+            self._executor.submit(job)
 
-    return frame
+    def _poll_results(self) -> None:
+        try:
+            while True:
+                on_ok, on_err, value, exc = self._results.get_nowait()
+                self.busy -= 1
+                if exc is None:
+                    if on_ok:
+                        on_ok(value)
+                else:
+                    self._handle_error(exc, on_err)
+                self.refresh()
+        except queue.Empty:
+            pass
+        self.after(config.UI_POLL_INTERVAL_MS, self._poll_results)
 
+    def _handle_error(self, exc: Exception, on_err: Optional[Callable]) -> None:
+        if on_err:
+            on_err(exc)
+        elif isinstance(exc, GeofenceViolationError):
+            self.notify(f"Movimento bloqueado: {exc}", error=True)
+        elif isinstance(exc, DroneError):
+            self.notify(str(exc), error=True)
+        else:
+            self.notify(f"Erro inesperado: {exc}", error=True)
 
-def widget_status(master, controller, **kwargs):
-    """
-    Cria um frame de Status que exibe informações do drone
-    e possui um botão para conectar.
-    """
-    frame = ctk.CTkFrame(master, **kwargs)
-    
-    label = ctk.CTkLabel(frame, text="Status do Drone", font=("Arial", 20))
-    label.place(x=100, y=5)
+    def _poll_telemetry(self) -> None:
+        # Só consulta se estiver conectado e ocioso (não concorre com comandos).
+        if self.controller.is_connected() and self.busy == 0:
+            def ok(data):
+                self.status_frame.battery_value = data["battery"]
+            self.run_command(self.controller.telemetry, on_ok=ok, on_err=lambda e: None)
+        self.after(config.TELEMETRY_INTERVAL_MS, self._poll_telemetry)
 
-    label2 = ctk.CTkLabel(frame, text="Desconetado/Conectado", font=("Arial", 12), text_color="red")
-    label2.place(x=20, y=45)
-
-    label3 = ctk.CTkLabel(frame, text="Modo: Delimitação/VooLivre", font=("Arial", 12), text_color="green")
-    label3.place(x=20, y=85)
-
-    label4 = ctk.CTkLabel(frame, text="Lat: 0.00000, Long: 0,00000, Alt: 0,0m", font=("Arial", 12))
-    label4.place(x=20, y=125)
-
-    label5 = ctk.CTkLabel(frame, text="Distância: N/A", font=("Arial", 12))
-    label5.place(x=20, y=165)
-
-    label6 = ctk.CTkLabel(frame, text="Bateria: 50%", font=("Arial", 12))
-    label6.place(x=20, y=205)
-    
-    button1 = ctk.CTkButton(frame, text="CONECTAR", font=("Arial", 12), command=controller.connect)
-    button1.place(x=100, y=250)
-
-    return frame
-
-
-def widget_monitoramento(master, **kwargs):
-    """
-    Cria um frame destinado ao monitoramento (por enquanto vazio).
-    """
-    frame = ctk.CTkFrame(master, **kwargs)
-    return frame
-
-
-def widget_controle_drone(master, controller, **kwargs):
-    """
-    Cria um frame com os controles para operação do drone. Os botões serão habilitados
-    se o drone estiver conectado e desabilitados caso contrário.
-    """
-    frame = ctk.CTkFrame(master, **kwargs)
-    
-    label = ctk.CTkLabel(frame, text="Controles do Drone", font=("Arial", 20))
-    label.place(x=20, y=5)
-    
-    # Define o estado dos botões com base na verificação de conexão
-    state = "normal" if controller.is_connected() else "disabled"
-
-    # DECOLAR
-    button1 = ctk.CTkButton(frame, text="DECOLAR", font=("Arial", 12), state=state, command=controller.takeoff)
-    button1.place(x=20, y=50)
-
-    # POUSAR
-    button2 = ctk.CTkButton(frame, text="POUSAR", font=("Arial", 12), state=state, command=controller.land)
-    button2.place(x=20, y=100)
-
-    # FRENTE
-    button3 = ctk.CTkButton(frame, text="FRENTE", font=("Arial", 12), state=state, command=lambda: controller.move_forward(60))
-    button3.place(x=400, y=30)
-        
-    # TRÁS
-    button4 = ctk.CTkButton(frame, text="TRÁS", font=("Arial", 12), state=state, command=lambda: controller.move_forward(60))
-    button4.place(x=400, y=90)
-
-    # DIREITA
-    button5 = ctk.CTkButton(frame, text="DIREITA", font=("Arial", 12), state=state, command=lambda: controller.move_right(60))
-    button5.place(x=500, y=60)
-
-    # ESQUERDA
-    button6 = ctk.CTkButton(frame, text="ESQUERDA", font=("Arial", 12), state=state, command=lambda: controller.move_left(60))
-    button6.place(x=300, y=60)
-
-    # SUBIR
-    button7 = ctk.CTkButton(frame, text="SUBIR", font=("Arial", 12), state=state, command=lambda: controller.move_up(60))
-    button7.place(x=320, y=140)
-
-    # DESCER
-    button8 = ctk.CTkButton(frame, text="DESCER", font=("Arial", 12), state=state, command=lambda: controller.move_down(60))
-    button8.place(x=480, y=140)
-
-    return frame
-
+    def on_close(self) -> None:
+        self.controller.end()
+        self._executor.shutdown(wait=False, cancel_futures=True)
+        self.destroy()

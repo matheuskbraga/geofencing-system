@@ -1,6 +1,9 @@
+"""Ponto de entrada: python main.py"""
+import logging
+
 from interface import App
 
-# Inicialização da interface
 if __name__ == "__main__":
-    app = App()
-    app.mainloop()
+    logging.basicConfig(level=logging.INFO,
+                        format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    App().mainloop()

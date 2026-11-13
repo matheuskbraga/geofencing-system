@@ -40,6 +40,21 @@ link:
 
 
 ---
+## Estrutura do código
+
+| Arquivo | Função |
+|---|---|
+| `main.py` | Ponto de entrada |
+| `interface.py` | Telas (CustomTkinter) e execução de comandos em threads |
+| `drone_commands.py` | Controle do Tello, validações e checagem do geofence |
+| `geofence.py` | Regras puras do geofence, log de violações e Haversine |
+| `config.py` | Constantes |
+| `tests/` | Testes automatizados (`python -m pytest -q`) |
+
+Guia completo, trecho por trecho: [docs/Explicacao_do_Codigo.pdf](docs/Explicacao_do_Codigo.pdf).
+
+---
+
 ## Como Executar
 
 Observação: Este projeto foi desenvolvido especificamente para o drone Tello, da DJI, incluindo sua execução e controle via software. Caso outro modelo de drone seja utilizado, será necessário ajustar o código, especialmente nos trechos relacionados aos comandos de voo e/ou à linguagem de comunicação compatível com o novo dispositivo.
